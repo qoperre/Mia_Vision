@@ -1,0 +1,36 @@
+﻿{
+    "choices":  [
+                    {
+                        "finish_reason":  "stop",
+                        "index":  0,
+                        "message":  {
+                                        "role":  "assistant",
+                                        "content":  "이미지의 왼쪽 위에는 빨간색 원이 있습니다.  \n이미지의 오른쪽 위에는 파란색 사각형이 있습니다.  \n이미지의 왼쪽 아래에는 녹색 삼각형이 있습니다.  \n이미지의 오른쪽 아래에는 노란색 별 모양의 도형이 있습니다.  \n검은 점은 이미지의 오른쪽 위의 파란색 사각형 안에 있습니다."
+                                    }
+                    }
+                ],
+    "created":  1784026551,
+    "model":  "C:\\Users\\Administrator\\Desktop\\Mia_Vision\\models\\Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+    "system_fingerprint":  "b9996-ec0dbef81",
+    "object":  "chat.completion",
+    "usage":  {
+                  "completion_tokens":  105,
+                  "prompt_tokens":  834,
+                  "total_tokens":  939,
+                  "prompt_tokens_details":  {
+                                                "cached_tokens":  0
+                                            }
+              },
+    "id":  "chatcmpl-54Kg4GqyZhEXToiDOV5mspn9gZwoKzPN",
+    "timings":  {
+                    "cache_n":  0,
+                    "prompt_n":  834,
+                    "prompt_ms":  405.163,
+                    "prompt_per_token_ms":  0.48580695443645083,
+                    "prompt_per_second":  2058.430804392306,
+                    "predicted_n":  105,
+                    "predicted_ms":  640.986,
+                    "predicted_per_token_ms":  6.104628571428571,
+                    "predicted_per_second":  163.81013001844033
+                }
+}

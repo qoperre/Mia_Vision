@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>게임 1 · 1부터 50까지</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: "Segoe UI", "Malgun Gothic", Arial, sans-serif;
+      --bg: #07111f;
+      --panel: #0c1a2d;
+      --line: #29415f;
+      --text: #f4f7fb;
+      --muted: #aab9cc;
+      --accent: #5ee1a3;
+      --danger: #ff5f6d;
+      --token-size: 78px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    body {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+      min-width: 300px;
+      min-height: 420px;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: minmax(175px, 1fr) auto auto;
+      align-items: center;
+      gap: 14px;
+      min-height: 82px;
+      padding: max(10px, env(safe-area-inset-top)) 16px 10px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    .title-block h1 {
+      margin: 0;
+      font-size: clamp(18px, 2.3vw, 27px);
+      line-height: 1.15;
+      letter-spacing: -0.02em;
+    }
+
+    .title-block p {
+      margin: 5px 0 0;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .metrics {
+      display: flex;
+      align-items: stretch;
+      gap: 8px;
+    }
+
+    .metric {
+      min-width: 88px;
+      padding: 7px 12px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #081526;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .metric-label {
+      display: block;
+      margin-bottom: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 600;
+    }
+
+    .metric-value {
+      display: block;
+      font-size: 20px;
+      font-weight: 800;
+      line-height: 1.05;
+    }
+
+    #nextValue {
+      color: var(--accent);
+    }
+
+    #errorValue.has-errors {
+      color: var(--danger);
+    }
+
+    .reset-button {
+      min-height: 44px;
+      padding: 0 17px;
+      border: 1px solid #7890ad;
+      border-radius: 9px;
+      background: #172b44;
+      color: var(--text);
+      font-weight: 750;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+
+    .reset-button:hover,
+    .reset-button:focus-visible {
+      border-color: var(--accent);
+      outline: none;
+      background: #1b3552;
+    }
+
+    .arena-wrap {
+      min-height: 0;
+      padding: 12px;
+    }
+
+    #arena {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      min-height: 300px;
+      overflow: hidden;
+      border: 2px solid var(--line);
+      border-radius: 14px;
+      background: #0a1728;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    #arena.miss {
+      border-color: var(--danger);
+    }
+
+    .number-token {
+      position: absolute;
+      z-index: 2;
+      display: grid;
+      place-items: center;
+      width: var(--token-size);
+      height: var(--token-size);
+      margin: 0;
+      padding: 0;
+      border: 4px solid #172033;
+      border-radius: 50%;
+      background: #ffffff;
+      color: #05080e;
+      box-shadow: 0 5px 0 #18243a, 0 8px 17px rgba(0, 0, 0, 0.3);
+      font-family: Arial, sans-serif;
+      font-size: calc(var(--token-size) * 0.5);
+      font-weight: 900;
+      line-height: 1;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    .number-token:focus-visible {
+      outline: 4px solid #62a8ff;
+      outline-offset: 3px;
+    }
+
+    .number-token.wrong {
+      border-color: var(--danger);
+      background: #ffe1e4;
+      color: #9c1520;
+    }
+
+    .miss-marker {
+      position: absolute;
+      z-index: 3;
+      width: 34px;
+      height: 34px;
+      margin: -17px 0 0 -17px;
+      color: var(--danger);
+      font: 900 34px/34px Arial, sans-serif;
+      text-align: center;
+      pointer-events: none;
+      animation: fade-marker 180ms ease-out forwards;
+    }
+
+    @keyframes fade-marker {
+      from { opacity: 1; transform: scale(0.72); }
+      to { opacity: 0; transform: scale(1.25); }
+    }
+
+    #result {
+      position: absolute;
+      z-index: 10;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 22px;
+      background: rgba(3, 10, 19, 0.88);
+      backdrop-filter: blur(3px);
+    }
+
+    #result[hidden] {
+      display: none;
+    }
+
+    .result-card {
+      width: min(480px, 94%);
+      padding: 30px 26px;
+      border: 2px solid var(--accent);
+      border-radius: 16px;
+      background: #0d1c30;
+      text-align: center;
+      box-shadow: 0 20px 70px rgba(0, 0, 0, 0.45);
+    }
+
+    .result-card h2 {
+      margin: 0 0 20px;
+      color: var(--accent);
+      font-size: 31px;
+    }
+
+    .result-line {
+      margin: 9px 0;
+      font-size: 20px;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .result-line strong {
+      font-size: 26px;
+    }
+
+    .result-card .reset-button {
+      margin-top: 19px;
+    }
+
+    @media (max-width: 760px) {
+      .topbar {
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 9px;
+        min-height: 112px;
+        padding-inline: 11px;
+      }
+
+      .title-block p {
+        display: none;
+      }
+
+      .metrics {
+        grid-column: 1 / -1;
+        grid-row: 2;
+      }
+
+      .metric {
+        flex: 1;
+        min-width: 0;
+        padding: 5px 8px;
+      }
+
+      .metric-value {
+        font-size: 18px;
+      }
+
+      .arena-wrap {
+        padding: 8px;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      .miss-marker {
+        animation-duration: 1ms;
+      }
+    }
+  </style>
+</head>
+<body data-game="game1" data-status="loading" data-expected="1" data-errors="0">
+  <header class="topbar">
+    <div class="title-block">
+      <h1>1부터 50까지</h1>
+      <p>화면의 숫자를 작은 수부터 차례로 누르세요.</p>
+    </div>
+
+    <div class="metrics" aria-label="게임 상태">
+      <div class="metric">
+        <span class="metric-label">다음 숫자</span>
+        <span id="nextValue" class="metric-value">1</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">시간</span>
+        <span id="timeValue" class="metric-value">0.000초</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">오류</span>
+        <span id="errorValue" class="metric-value">0</span>
+      </div>
+    </div>
+
+    <button id="resetButton" class="reset-button" type="button">다시 시작</button>
+  </header>
+
+  <main class="arena-wrap">
+    <section id="arena" aria-label="숫자 터치 영역" data-status="loading" data-expected="1" data-errors="0">
+      <div id="result" role="status" aria-live="polite" hidden>
+        <div class="result-card">
+          <h2>완료!</h2>
+          <p class="result-line">총 시간: <strong id="finalTime">0.000초</strong></p>
+          <p class="result-line">정확한 시간: <strong id="finalMilliseconds">0 ms</strong></p>
+          <p class="result-line">잘못 누른 횟수: <strong id="finalErrors">0회</strong></p>
+          <button id="resultResetButton" class="reset-button" type="button">다시 시작</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      "use strict";
+
+      const TARGET = 50;
+      const INITIAL_VISIBLE = 4;
+      const TOKEN_GAP = 16;
+      const arena = document.getElementById("arena");
+      const result = document.getElementById("result");
+      const nextValue = document.getElementById("nextValue");
+      const timeValue = document.getElementById("timeValue");
+      const errorValue = document.getElementById("errorValue");
+      const finalTime = document.getElementById("finalTime");
+      const finalMilliseconds = document.getElementById("finalMilliseconds");
+      const finalErrors = document.getElementById("finalErrors");
+
+      let status = "loading";
+      let expected = 1;
+      let nextToSpawn = INITIAL_VISIBLE + 1;
+      let errors = 0;
+      let wrongNumberClicks = 0;
+      let wrongPositionClicks = 0;
+      let correctClicks = 0;
+      let startedAt = 0;
+      let finishedElapsed = null;
+      let lastInputAt = null;
+      let animationFrame = 0;
+      let random = Math.random;
+      let activeSeed = null;
+      const active = new Map();
+
+      function mulberry32(seed) {
+        let value = seed >>> 0;
+        return () => {
+          value += 0x6d2b79f5;
+          let output = value;
+          output = Math.imul(output ^ (output >>> 15), output | 1);
+          output ^= output + Math.imul(output ^ (output >>> 7), output | 61);
+          return ((output ^ (output >>> 14)) >>> 0) / 4294967296;
+        };
+      }
+
+      function elapsedNow() {
+        if (finishedElapsed !== null) return finishedElapsed;
+        if (!startedAt) return 0;
+        return Math.max(0, performance.now() - startedAt);
+      }
+
+      function formatSeconds(milliseconds) {
+        return `${(milliseconds / 1000).toFixed(3)}초`;
+      }
+
+      function syncPublicState() {
+        const elapsed = elapsedNow();
+        const expectedText = expected <= TARGET ? String(expected) : "완료";
+
+        nextValue.textContent = expectedText;
+        timeValue.textContent = formatSeconds(elapsed);
+        errorValue.textContent = String(errors);
+        errorValue.classList.toggle("has-errors", errors > 0);
+
+        for (const element of [document.body, arena]) {
+          element.dataset.status = status;
+          element.dataset.expected = String(expected);
+          element.dataset.errors = String(errors);
+          element.dataset.elapsedMs = elapsed.toFixed(3);
+        }
+      }
+
+      function timerLoop() {
+        if (status !== "running") return;
+        syncPublicState();
+        animationFrame = requestAnimationFrame(timerLoop);
+      }
+
+      function tokenSize() {
+        const rect = arena.getBoundingClientRect();
+        return Math.max(56, Math.min(88, Math.min(rect.width, rect.height) * 0.14));
+      }
+
+      function overlapsExisting(x, y, size, ignoredNumber = null) {
+        for (const [number, token] of active) {
+          if (number === ignoredNumber) continue;
+          const otherX = Number.parseFloat(token.style.left) || 0;
+          const otherY = Number.parseFloat(token.style.top) || 0;
+          const separated =
+            x + size + TOKEN_GAP <= otherX ||
+            otherX + size + TOKEN_GAP <= x ||
+            y + size + TOKEN_GAP <= otherY ||
+            otherY + size + TOKEN_GAP <= y;
+          if (!separated) return true;
+        }
+        return false;
+      }
+
+      function findFreePosition(size, ignoredNumber = null) {
+        const rect = arena.getBoundingClientRect();
+        const padding = 12;
+        const maxX = Math.max(padding, rect.width - size - padding);
+        const maxY = Math.max(padding, rect.height - size - padding);
+
+        for (let attempt = 0; attempt < 400; attempt += 1) {
+          const x = padding + random() * Math.max(0, maxX - padding);
+          const y = padding + random() * Math.max(0, maxY - padding);
+          if (!overlapsExisting(x, y, size, ignoredNumber)) return { x, y };
+        }
+
+        const step = size + TOKEN_GAP;
+        const candidates = [];
+        for (let y = padding; y <= maxY + 0.1; y += step) {
+          for (let x = padding; x <= maxX + 0.1; x += step) {
+            if (!overlapsExisting(x, y, size, ignoredNumber)) candidates.push({ x, y });
+          }
+        }
+        if (candidates.length) return candidates[Math.floor(random() * candidates.length)];
+
+        // Extremely small viewports may not fit four tokens with the preferred gap.
+        return {
+          x: padding + random() * Math.max(0, maxX - padding),
+          y: padding + random() * Math.max(0, maxY - padding)
+        };
+      }
+
+      function isPrimaryPointer(event) {
+        return event.pointerType !== "mouse" || event.button === 0;
+      }
+
+      function handleNumber(number, token) {
+        if (status !== "running") return;
+        lastInputAt = performance.now();
+
+        if (number !== expected) {
+          errors += 1;
+          wrongNumberClicks += 1;
+          token.classList.remove("wrong");
+          void token.offsetWidth;
+          token.classList.add("wrong");
+          window.setTimeout(() => token.classList.remove("wrong"), 130);
+          syncPublicState();
+          return;
+        }
+
+        active.delete(number);
+        token.remove();
+        correctClicks += 1;
+        expected += 1;
+
+        if (nextToSpawn <= TARGET) {
+          spawnToken(nextToSpawn);
+          nextToSpawn += 1;
+        }
+
+        if (expected > TARGET) {
+          completeGame();
+        } else {
+          syncPublicState();
+        }
+      }
+
+      function spawnToken(number) {
+        const size = tokenSize();
+        arena.style.setProperty("--token-size", `${size}px`);
+        const position = findFreePosition(size);
+        const token = document.createElement("button");
+        token.type = "button";
+        token.className = "number-token";
+        token.dataset.number = String(number);
+        token.setAttribute("aria-label", `${number}번`);
+        token.textContent = String(number);
+        token.style.left = `${position.x}px`;
+        token.style.top = `${position.y}px`;
+
+        token.addEventListener("pointerdown", (event) => {
+          if (!isPrimaryPointer(event)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          handleNumber(number, token);
+        });
+
+        // Native keyboard activation emits a click with detail=0 and no pointerdown.
+        token.addEventListener("click", (event) => {
+          event.stopPropagation();
+          if (event.detail === 0) handleNumber(number, token);
+        });
+
+        active.set(number, token);
+        arena.appendChild(token);
+      }
+
+      function markWrongPosition(event) {
+        if (status !== "running" || !isPrimaryPointer(event)) return;
+        event.preventDefault();
+        errors += 1;
+        wrongPositionClicks += 1;
+        lastInputAt = performance.now();
+
+        const rect = arena.getBoundingClientRect();
+        const marker = document.createElement("span");
+        marker.className = "miss-marker";
+        marker.textContent = "×";
+        marker.setAttribute("aria-hidden", "true");
+        marker.style.left = `${event.clientX - rect.left}px`;
+        marker.style.top = `${event.clientY - rect.top}px`;
+        arena.appendChild(marker);
+        window.setTimeout(() => marker.remove(), 200);
+
+        arena.classList.add("miss");
+        window.setTimeout(() => arena.classList.remove("miss"), 110);
+        syncPublicState();
+      }
+
+      function completeGame() {
+        finishedElapsed = performance.now() - startedAt;
+        status = "complete";
+        cancelAnimationFrame(animationFrame);
+        syncPublicState();
+
+        finalTime.textContent = formatSeconds(finishedElapsed);
+        finalMilliseconds.textContent = `${finishedElapsed.toFixed(3)} ms`;
+        finalErrors.textContent = `${errors}회`;
+        result.hidden = false;
+      }
+
+      function parseSeed(options) {
+        if (typeof options === "number" && Number.isFinite(options)) return options >>> 0;
+        if (options && typeof options === "object" && Number.isFinite(options.seed)) {
+          return options.seed >>> 0;
+        }
+        return null;
+      }
+
+      function resetGame(options) {
+        cancelAnimationFrame(animationFrame);
+        for (const token of active.values()) token.remove();
+        active.clear();
+        arena.querySelectorAll(".miss-marker").forEach((marker) => marker.remove());
+        arena.classList.remove("miss");
+        result.hidden = true;
+
+        activeSeed = parseSeed(options);
+        random = activeSeed === null ? Math.random : mulberry32(activeSeed);
+        status = "running";
+        expected = 1;
+        nextToSpawn = INITIAL_VISIBLE + 1;
+        errors = 0;
+        wrongNumberClicks = 0;
+        wrongPositionClicks = 0;
+        correctClicks = 0;
+        finishedElapsed = null;
+        lastInputAt = null;
+
+        for (let number = 1; number <= INITIAL_VISIBLE; number += 1) spawnToken(number);
+        startedAt = performance.now();
+        syncPublicState();
+        animationFrame = requestAnimationFrame(timerLoop);
+      }
+
+      function repositionActiveTokens() {
+        if (status !== "running" || active.size === 0) return;
+        const entries = [...active.entries()];
+        const size = tokenSize();
+        arena.style.setProperty("--token-size", `${size}px`);
+        active.clear();
+        for (const [number, token] of entries) {
+          const position = findFreePosition(size);
+          token.style.left = `${position.x}px`;
+          token.style.top = `${position.y}px`;
+          active.set(number, token);
+        }
+      }
+
+      arena.addEventListener("pointerdown", markWrongPosition);
+      document.getElementById("resetButton").addEventListener("click", () => resetGame());
+      document.getElementById("resultResetButton").addEventListener("click", () => resetGame());
+
+      let resizeTimer = 0;
+      window.addEventListener("resize", () => {
+        window.clearTimeout(resizeTimer);
+        resizeTimer = window.setTimeout(repositionActiveTokens, 80);
+      });
+
+      Object.defineProperty(window, "game1State", {
+        configurable: false,
+        enumerable: true,
+        get() {
+          return Object.freeze({
+            version: 1,
+            status,
+            target: TARGET,
+            expected,
+            nextToSpawn,
+            errors,
+            wrongNumberClicks,
+            wrongPositionClicks,
+            correctClicks,
+            elapsedMs: elapsedNow(),
+            seed: activeSeed,
+            activeNumbers: Object.freeze([...active.keys()].sort((a, b) => a - b)),
+            lastInputAt,
+            completed: status === "complete"
+          });
+        }
+      });
+      window.resetGame1 = resetGame;
+
+      requestAnimationFrame(() => resetGame());
+    })();
+  </script>
+</body>
+</html>

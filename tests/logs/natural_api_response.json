@@ -1,0 +1,36 @@
+﻿{
+    "choices":  [
+                    {
+                        "finish_reason":  "stop",
+                        "index":  0,
+                        "message":  {
+                                        "role":  "assistant",
+                                        "content":  "해변에서 햇살이 따뜻하게 비치는 날, 젊은 여성이 편안한 자세로 앉아 노란색 강아지와 함께 손을 맞잡고 놀고 있는 따뜻한 순간을 보여줍니다."
+                                    }
+                    }
+                ],
+    "created":  1784026665,
+    "model":  "C:\\Users\\Administrator\\Desktop\\Mia_Vision\\models\\Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+    "system_fingerprint":  "b9996-ec0dbef81",
+    "object":  "chat.completion",
+    "usage":  {
+                  "completion_tokens":  63,
+                  "prompt_tokens":  2790,
+                  "total_tokens":  2853,
+                  "prompt_tokens_details":  {
+                                                "cached_tokens":  0
+                                            }
+              },
+    "id":  "chatcmpl-tqcXWwFw9dSy1s0nV5dXzUsOWH7OcF80",
+    "timings":  {
+                    "cache_n":  0,
+                    "prompt_n":  2790,
+                    "prompt_ms":  1500.088,
+                    "prompt_per_token_ms":  0.5376659498207885,
+                    "prompt_per_second":  1859.890886401331,
+                    "predicted_n":  63,
+                    "predicted_ms":  378.88,
+                    "predicted_per_token_ms":  6.013968253968254,
+                    "predicted_per_second":  166.27956081081084
+                }
+}

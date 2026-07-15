@@ -1,0 +1,36 @@
+﻿{
+    "choices":  [
+                    {
+                        "finish_reason":  "stop",
+                        "index":  0,
+                        "message":  {
+                                        "role":  "assistant",
+                                        "content":  "```json\n{\n  \"장비명\": \"RTX 2080 SUPER\",\n  \"점검일\": \"2026-07-14\",\n  \"온도\": \"63°C\",\n  \"상태\": \"정상\",\n  \"관리번호\": \"MV-2080S-0714\"\n}\n```"
+                                    }
+                    }
+                ],
+    "created":  1784026587,
+    "model":  "C:\\Users\\Administrator\\Desktop\\Mia_Vision\\models\\Qwen3VL-2B-Instruct-Q4_K_M.gguf",
+    "system_fingerprint":  "b9996-ec0dbef81",
+    "object":  "chat.completion",
+    "usage":  {
+                  "completion_tokens":  79,
+                  "prompt_tokens":  865,
+                  "total_tokens":  944,
+                  "prompt_tokens_details":  {
+                                                "cached_tokens":  809
+                                            }
+              },
+    "id":  "chatcmpl-LveAkhoeOot5S9yexNeviAbsKJpxBZjp",
+    "timings":  {
+                    "cache_n":  809,
+                    "prompt_n":  56,
+                    "prompt_ms":  15.82,
+                    "prompt_per_token_ms":  0.28250000000000003,
+                    "prompt_per_second":  3539.8230088495575,
+                    "predicted_n":  79,
+                    "predicted_ms":  457.062,
+                    "predicted_per_token_ms":  5.785594936708861,
+                    "predicted_per_second":  172.84307161829247
+                }
+}

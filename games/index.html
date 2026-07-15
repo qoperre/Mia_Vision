@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Mia Vision · 터치 게임 테스트</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", "Malgun Gothic", sans-serif; }
+    * { box-sizing: border-box; }
+    body {
+      min-height: 100vh;
+      margin: 0;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+      background: radial-gradient(circle at 50% 10%, #19365e, #07111f 55%, #030812);
+      color: #f5f9ff;
+    }
+    main { width: min(980px, 100%); }
+    h1 { margin: 0; font-size: clamp(31px, 5vw, 58px); }
+    .lead { margin: 12px 0 30px; color: #a9bdd6; font-size: 18px; }
+    .games { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+    .card {
+      display: flex;
+      min-height: 280px;
+      flex-direction: column;
+      padding: 28px;
+      border: 2px solid #315376;
+      border-radius: 20px;
+      background: #0c1b30e8;
+      box-shadow: 0 18px 55px #0008;
+    }
+    .card h2 { margin: 0; font-size: 32px; }
+    .card p { flex: 1; color: #b9c8dc; line-height: 1.6; }
+    .goal { color: #68f0ad; font-weight: 800; }
+    a {
+      display: grid;
+      min-height: 60px;
+      place-items: center;
+      border-radius: 12px;
+      background: #62e6aa;
+      color: #042116;
+      font-size: 20px;
+      font-weight: 900;
+      text-decoration: none;
+      touch-action: manipulation;
+    }
+    a:focus-visible { outline: 4px solid white; outline-offset: 4px; }
+    @media (max-width: 720px) { .games { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Mia Vision Touch Lab</h1>
+    <p class="lead">Qwen3-VL 화면 인식과 실제 터치 제어를 검증하는 두 가지 게임입니다.</p>
+    <section class="games">
+      <article class="card">
+        <h2>게임 1 · 1→50</h2>
+        <p>랜덤 위치에 나타나는 숫자를 1부터 50까지 순서대로 터치합니다.</p>
+        <p class="goal">목표: 오류 0회 · 10초 미만</p>
+        <a href="game1.html">게임 1 시작</a>
+      </article>
+      <article class="card">
+        <h2>게임 2 · Vision Flappy</h2>
+        <p>화면 터치로 새의 높이를 제어해 청록색 장애물의 빈 공간을 통과합니다.</p>
+        <p class="goal">목표: 장애물 20개 이상</p>
+        <a href="game2.html">게임 2 시작</a>
+      </article>
+    </section>
+  </main>
+</body>
+</html>
+
