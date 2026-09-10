@@ -90,3 +90,65 @@ Qwen/CV 에이전트로 실제 터치를 실행하려면:
 에이전트 판단은 게임 DOM 좌표를 사용하지 않고 Chrome이 렌더링한 PNG 픽셀만 사용합니다. `game1State`와 `game2State`는 최종 점수·오류·완료 여부를 판정하는 심판 계측에만 사용합니다.
 
 게임 결과는 `tests/game_results/`, 실행 화면은 `tests/game_artifacts/`에 저장됩니다.
+
+## 원격 포드 백엔드 (Qwen3-VL-8B)
+
+로컬 `Qwen3-VL-2B`는 8GB VRAM에서 빠르지만 게임 화면 이해와 좌표 인식 품질이 한계입니다.
+같은 OpenAI 호환 API를 쓰므로 RunPod H200 포드의 `Qwen3-VL-8B-Instruct`(bf16 약 16GB)로 그대로 갈아끼울 수 있습니다(`plan.md` §11-8).
+
+포드에서 vLLM 기동(비전 포트는 8092):
+
+```bash
+vllm serve Qwen/Qwen3-VL-8B-Instruct \
+  --served-model-name mia-vl \
+  --port 8092 \
+  --gpu-memory-utilization 0.13
+```
+
+방송 PC에서 SSH 터널을 엽니다. 서버는 포드 내부에만 바인딩되므로 터널이 유일한 통로입니다.
+
+```powershell
+ssh -N -L 8092:127.0.0.1:8092 -p <포드포트> root@<포드IP>
+```
+
+에이전트를 원격 백엔드로 실행:
+
+```powershell
+python .\agents\vision_game_agent.py all --api-url http://127.0.0.1:8092 --model mia-vl
+```
+
+- `--api-url` 기본값은 로컬 `http://127.0.0.1:8080`이라 인자를 안 주면 지금까지와 똑같이 동작합니다.
+- 시작할 때 `/v1/models`를 한 번 조회합니다. 지정한 모델이 목록에 없으면 서버가 서빙하는 이름으로 자동 교정하고 경고 한 줄을 남기며, 조회 자체가 실패하면 즉시 종료합니다(추론 타임아웃 60초를 기다리지 않습니다).
+- 인증이 걸린 엔드포인트라면 `--api-key <키>`를 주면 `Authorization: Bearer` 헤더가 붙습니다.
+- 좌표 정규화 기준은 `--coord-scale`(기본 1000)입니다. Qwen3-VL 계열은 0~1000이지만 **다른 계열 모델로 바꾸면 실측이 먼저입니다.** 게임 1 결과의 `qwen_predictions_px`와 `cv_centers_px`가 어긋나면 이 값을 의심하세요.
+
+### 로컬 2B와 A/B 하는 법
+
+기존 벤치마크를 그대로 씁니다. **시드를 고정하고** 두 번 돌린 뒤 결과 JSON을 비교하면 됩니다.
+결과 파일 이름은 시드로만 정해지므로 먼저 돌린 쪽을 복사해 두어야 덮어쓰지 않습니다.
+
+```powershell
+# A: 로컬 2B
+.\scripts\run_game_agent.ps1 -Game all -Seed 20260714
+Copy-Item .\tests\game_results\latest.json .\tests\game_results\ab_local_2b.json
+
+# B: 포드 8B (터널이 열린 상태)
+python .\agents\vision_game_agent.py all --api-url http://127.0.0.1:8092 --model mia-vl --seed 20260714
+Copy-Item .\tests\game_results\latest.json .\tests\game_results\ab_pod_8b.json
+```
+
+각 결과에는 어느 모델이 만든 값인지 `model` 필드가 들어갑니다. 볼 지표:
+
+| 게임 | 지표 | 의미 |
+|---|---|---|
+| 1 | `assignment_total_error` | 예측 좌표와 실제 원 중심의 총 오차(px). 낮을수록 좋음 |
+| 1 | `assignment_margin` | 정답 배치와 차순위 배치의 거리 차. 클수록 자신 있는 인식 |
+| 1 | `qwen_latency_seconds` | 호출 1회 지연. 원격은 네트워크 왕복이 더해짐 |
+| 2 | `accepted_qwen_audits` / `qwen_calls` | CV 관측과 일치해 채택된 비율 |
+| 2 | `score`, `passed` | 최종 성적(제어는 CV가 하므로 보조 지표) |
+
+게임 2의 비행 제어는 CV가 담당하고 모델 출력은 자문 역할이라, 8B 효과는 게임 1의 좌표 오차에서 더 뚜렷하게 보입니다.
+
+**아직 실측 안 된 지점**: 구조화 JSON 출력 경로. 이 llama.cpp 빌드는 요청 최상위 `json_schema`를,
+vLLM은 OpenAI 표준 `response_format`을 봅니다. 에이전트는 **둘 다 실어 보내** 백엔드가 아는 쪽을 쓰게 합니다.
+포드 첫 실행에서 `qwen_raw`가 JSON이 아니거나 400이 나면 이 부분을 먼저 의심하세요.

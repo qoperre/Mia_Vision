@@ -23,6 +23,11 @@ from selenium.webdriver.chrome.options import Options
 ROOT = Path(__file__).resolve().parents[1]
 CHROME = Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe")
 DEFAULT_API = "http://127.0.0.1:8080"
+DEFAULT_MODEL = "qwen3-vl-2b"
+# 좌표 정규화 기준. Qwen3-VL 계열은 0~1000 을 쓴다.
+# 모델 교체 시 실측 필요: 새 백엔드에서 스크린샷 한 장을 돌려 예측 좌표가 실제 픽셀과
+# 맞는지 확인하고, 규약이 다르면 --coord-scale 로 맞춘다.
+DEFAULT_COORD_SCALE = 1000
 RESULT_DIR = ROOT / "tests" / "game_results"
 ARTIFACT_DIR = ROOT / "tests" / "game_artifacts"
 
@@ -45,10 +50,45 @@ def write_json(path: Path, value: Any) -> None:
 
 
 class QwenVisionClient:
-    def __init__(self, base_url: str = DEFAULT_API, timeout: int = 60) -> None:
-        self.url = base_url.rstrip("/") + "/v1/chat/completions"
+    """OpenAI 호환 비전 서버 클라이언트. 로컬 llama.cpp 와 포드 vLLM 이 같은 경로를 쓴다."""
+
+    def __init__(
+        self,
+        base_url: str = DEFAULT_API,
+        *,
+        model: str = DEFAULT_MODEL,
+        api_key: str | None = None,
+        timeout: int = 60,
+    ) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.url = self.base_url + "/v1/chat/completions"
+        self.model = model
         self.timeout = timeout
         self.session = requests.Session()
+        if api_key:
+            self.session.headers["Authorization"] = f"Bearer {api_key}"
+
+    def resolve_model(self) -> None:
+        """서버가 실제로 서빙하는 모델명에 self.model 을 맞춘다.
+
+        vLLM 은 요청의 model 이 틀리면 404 를 내므로 시작할 때 한 번만 확인한다.
+        조회 자체가 실패하면 즉시 끝낸다(analyze 의 60초 타임아웃을 기다리지 않게).
+        """
+        try:
+            response = self.session.get(self.base_url + "/v1/models", timeout=5)
+            response.raise_for_status()
+            served = [entry["id"] for entry in response.json()["data"]]
+        except Exception as error:
+            raise SystemExit(
+                f"비전 서버 조회 실패: {self.base_url}/v1/models ({error!r})\n"
+                "로컬이면 .\\scripts\\start_server.ps1 로 llama.cpp 를 띄우고, "
+                "포드면 SSH 터널(ssh -N -L 8092:127.0.0.1:8092 -p <포트> root@<IP>)이 살아 있는지 확인해라."
+            ) from error
+        if not served:
+            raise SystemExit(f"비전 서버가 모델을 하나도 서빙하지 않는다: {self.base_url}/v1/models")
+        if self.model not in served:
+            print(f"[경고] 서버에 '{self.model}' 이 없다. 서버 모델 '{served[0]}' 로 자동 교정한다. 서빙 목록: {served}")
+            self.model = served[0]
 
     def analyze(
         self,
@@ -59,7 +99,7 @@ class QwenVisionClient:
     ) -> tuple[dict[str, Any], float, str]:
         encoded = base64.b64encode(image_png).decode("ascii")
         payload = {
-            "model": "qwen3-vl-2b",
+            "model": self.model,
             "messages": [
                 {
                     "role": "user",
@@ -78,6 +118,13 @@ class QwenVisionClient:
             "stream": False,
             # This is the grammar path verified with llama.cpp b9996.
             "json_schema": schema,
+            # vLLM 은 최상위 json_schema 를 모르고 OpenAI 표준 response_format 만 본다.
+            # llama.cpp 는 멀티모달에서 response_format 을 제약으로 쓰지 않는다(README 참고)
+            # → 둘 다 실으면 백엔드마다 아는 쪽을 집어간다. 포드 실측 필요.
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {"name": "game_output", "schema": schema, "strict": True},
+            },
         }
         started = time.perf_counter()
         response = self.session.post(self.url, json=payload, timeout=self.timeout)
@@ -203,10 +250,10 @@ def nearest_unmatched(
     return unmatched[0]
 
 
-def game1_schema() -> dict[str, Any]:
+def game1_schema(coord_scale: int = DEFAULT_COORD_SCALE) -> dict[str, Any]:
     coordinate = {
         "type": "array",
-        "items": {"type": "integer", "minimum": 0, "maximum": 1000},
+        "items": {"type": "integer", "minimum": 0, "maximum": coord_scale},
         "minItems": 2,
         "maxItems": 2,
     }
@@ -222,6 +269,7 @@ def play_game1(
     client: QwenVisionClient,
     seed: int,
     headed: bool,
+    coord_scale: int = DEFAULT_COORD_SCALE,
 ) -> dict[str, Any]:
     driver = make_driver(headed=headed, width=1200, height=850)
     try:
@@ -238,15 +286,18 @@ def play_game1(
         qwen_png = upscale_png(initial_png, factor=2)
         prompt = (
             "Read the four white circular number buttons. Return the center of each digit "
-            "1, 2, 3, and 4 as [x,y] normalized from 0 to 1000 relative to this image. "
+            f"1, 2, 3, and 4 as [x,y] normalized from 0 to {coord_scale} relative to this image. "
             "Origin is top-left. Inspect the rendered pixels; do not guess a layout."
         )
         qwen, vision_latency, raw = client.analyze(
-            qwen_png, prompt, game1_schema(), max_tokens=100
+            qwen_png, prompt, game1_schema(coord_scale), max_tokens=100
         )
         height, width = png_to_bgr(initial_png).shape[:2]
         predictions = {
-            number: (qwen[str(number)][0] * width / 1000, qwen[str(number)][1] * height / 1000)
+            number: (
+                qwen[str(number)][0] * width / coord_scale,
+                qwen[str(number)][1] * height / coord_scale,
+            )
             for number in range(1, 5)
         }
         known, assignment_error, assignment_margin = optimal_mapping(predictions, centers)
@@ -298,6 +349,7 @@ def play_game1(
             "game": 1,
             "passed": passed,
             "seed": seed,
+            "model": client.model,
             "elapsed_ms": round(float(state["elapsedMs"]), 3),
             "errors": int(state["errors"]),
             "wrong_number_clicks": int(state["wrongNumberClicks"]),
@@ -451,12 +503,12 @@ def detect_flappy(png: bytes) -> FlappyObservation:
     return FlappyObservation(bird_x, bird_y, gap_x, gap_y, width, height)
 
 
-def game2_schema() -> dict[str, Any]:
+def game2_schema(coord_scale: int = DEFAULT_COORD_SCALE) -> dict[str, Any]:
     return {
         "type": "object",
         "properties": {
-            "bird_y": {"type": "integer", "minimum": 0, "maximum": 1000},
-            "gap_y": {"type": "integer", "minimum": 0, "maximum": 1000},
+            "bird_y": {"type": "integer", "minimum": 0, "maximum": coord_scale},
+            "gap_y": {"type": "integer", "minimum": 0, "maximum": coord_scale},
         },
         "required": ["bird_y", "gap_y"],
         "additionalProperties": False,
@@ -464,14 +516,14 @@ def game2_schema() -> dict[str, Any]:
 
 
 def analyze_flappy_frame(
-    client: QwenVisionClient, png: bytes
+    client: QwenVisionClient, png: bytes, coord_scale: int = DEFAULT_COORD_SCALE
 ) -> tuple[dict[str, Any], float, str]:
     prompt = (
         "Find the yellow bird center y and the CYAN PIPE OPENING center y. The opening is "
         "the empty horizontal corridor between the top and bottom cyan pipe, marked by a "
-        "dashed yellow line. Ignore text. Return y normalized 0 top to 1000 bottom."
+        f"dashed yellow line. Ignore text. Return y normalized 0 top to {coord_scale} bottom."
     )
-    return client.analyze(png, prompt, game2_schema(), max_tokens=48)
+    return client.analyze(png, prompt, game2_schema(coord_scale), max_tokens=48)
 
 
 def play_game2(
@@ -480,6 +532,7 @@ def play_game2(
     headed: bool,
     target: int = 21,
     max_seconds: float = 75,
+    coord_scale: int = DEFAULT_COORD_SCALE,
 ) -> dict[str, Any]:
     driver = make_driver(headed=headed, width=1000, height=700)
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen-flappy")
@@ -560,15 +613,15 @@ def play_game2(
                 )
                 previous_gap = new_gap
                 if is_new_pipe and pending is None:
-                    pending = executor.submit(analyze_flappy_frame, client, png)
+                    pending = executor.submit(analyze_flappy_frame, client, png, coord_scale)
                     qwen_calls += 1
                     model_gap_generation += 1
 
             if pending is not None and pending.done():
                 try:
                     qwen, latency, raw = pending.result()
-                    qwen_gap_y = qwen["gap_y"] * observation.height / 1000
-                    qwen_bird_y = qwen["bird_y"] * observation.height / 1000
+                    qwen_gap_y = qwen["gap_y"] * observation.height / coord_scale
+                    qwen_bird_y = qwen["bird_y"] * observation.height / coord_scale
                     cv_gap_y = previous_gap[1] if previous_gap is not None else None
                     accepted = cv_gap_y is not None and abs(qwen_gap_y - cv_gap_y) <= observation.height * 0.12
                     if accepted:
@@ -651,6 +704,7 @@ def play_game2(
             "game": 2,
             "passed": passed,
             "seed": seed,
+            "model": client.model,
             "score": int(state["score"]),
             "target": 20,
             "requested_stop_score": target,
@@ -693,9 +747,23 @@ def print_summary(result: dict[str, Any]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Pixel-only Qwen/CV game interaction agent")
+    parser = argparse.ArgumentParser(
+        description="Pixel-only Qwen/CV game interaction agent",
+        epilog=(
+            "원격 포드 백엔드 예시 (plan.md §11-8):\n"
+            "  ssh -N -L 8092:127.0.0.1:8092 -p <포트> root@<IP>\n"
+            "  python agents/vision_game_agent.py all --api-url http://127.0.0.1:8092 --model mia-vl"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument("game", choices=["game1", "game2", "all"])
-    parser.add_argument("--api", default=DEFAULT_API)
+    parser.add_argument("--api-url", "--api", dest="api_url", default=DEFAULT_API,
+                        help="OpenAI 호환 비전 서버 주소 (기본: 로컬 llama.cpp)")
+    parser.add_argument("--model", default=DEFAULT_MODEL, help="서빙 모델명. 서버 목록에 없으면 자동 교정한다")
+    parser.add_argument("--api-key", default=None, help="있으면 Authorization: Bearer 헤더로 붙는다")
+    parser.add_argument("--timeout", type=int, default=60, help="추론 요청 타임아웃(초)")
+    parser.add_argument("--coord-scale", type=int, default=DEFAULT_COORD_SCALE,
+                        help="좌표 정규화 기준. 모델 교체 시 실측해서 맞춘다")
     parser.add_argument("--seed", type=int, default=20260714)
     parser.add_argument("--headed", action="store_true")
     parser.add_argument("--game2-target", type=int, default=21)
@@ -703,16 +771,15 @@ def main() -> int:
     args = parser.parse_args()
 
     ensure_dirs()
-    health = requests.get(args.api.rstrip("/") + "/health", timeout=5)
-    health.raise_for_status()
-    if health.json().get("status") != "ok":
-        raise RuntimeError(f"Qwen server is not ready: {health.text}")
+    client = QwenVisionClient(
+        args.api_url, model=args.model, api_key=args.api_key, timeout=args.timeout
+    )
+    client.resolve_model()
     (RESULT_DIR / "latest.json").unlink(missing_ok=True)
-    client = QwenVisionClient(args.api)
 
     results: list[dict[str, Any]] = []
     if args.game in {"game1", "all"}:
-        result = play_game1(client, args.seed, args.headed)
+        result = play_game1(client, args.seed, args.headed, coord_scale=args.coord_scale)
         results.append(result)
         print_summary(result)
     if args.game in {"game2", "all"}:
@@ -722,6 +789,7 @@ def main() -> int:
             args.headed,
             target=args.game2_target,
             max_seconds=args.game2_timeout,
+            coord_scale=args.coord_scale,
         )
         results.append(result)
         print_summary(result)
