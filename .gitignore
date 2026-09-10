@@ -1,0 +1,5 @@
+__pycache__/
+*.py[cod]
+tests/logs/server.stdout.log
+tests/logs/game-ui.stdout.log
+tests/logs/game-ui.stderr.log

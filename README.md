@@ -66,6 +66,14 @@ OpenAI 호환 API: `http://127.0.0.1:8080/v1/chat/completions`
 
 그다음 <http://127.0.0.1:8090>에 접속합니다. 종료는 `.\scripts\stop_game_ui.ps1`입니다.
 
+에이전트에는 별도 파이썬 패키지가 필요합니다. 처음 한 번만 설치합니다.
+
+```powershell
+pip install -r requirements-games.txt
+```
+
+Chrome은 `C:\Program Files\Google\Chrome\Application\chrome.exe`에 설치되어 있어야 합니다.
+
 Qwen/CV 에이전트로 실제 터치를 실행하려면:
 
 ```powershell

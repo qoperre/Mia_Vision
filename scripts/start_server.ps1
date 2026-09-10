@@ -74,6 +74,7 @@ for ($attempt = 0; $attempt -lt 120; $attempt++) {
 
 if (-not $ready) {
     $tail = Get-Content -LiteralPath $stderrLog -Tail 80 -ErrorAction SilentlyContinue
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     throw "Server did not become ready.`n$($tail -join [Environment]::NewLine)"
 }
 

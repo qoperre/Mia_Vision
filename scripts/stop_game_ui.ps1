@@ -7,7 +7,8 @@ if (-not $connection) {
     exit 0
 }
 $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($connection.OwningProcess)"
-if (-not $process -or $process.CommandLine -notmatch 'http\.server') {
+# 런처가 쓰는 인자 형태(http.server <포트>)까지 확인해서 무관한 http.server 프로세스를 죽이지 않도록 한다.
+if (-not $process -or $process.CommandLine -notmatch "http\.server\s+$Port\b") {
     throw "Refusing to stop PID $($connection.OwningProcess): it is not the game UI server."
 }
 Stop-Process -Id $connection.OwningProcess -Force

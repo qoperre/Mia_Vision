@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$BaseUrl = 'http://127.0.0.1:8080'
 )
 
@@ -8,11 +8,6 @@ $root = Split-Path -Parent $PSScriptRoot
 $imageDir = Join-Path $root 'tests\images'
 $resultDir = Join-Path $root 'tests\results'
 New-Item -ItemType Directory -Force -Path $resultDir | Out-Null
-
-function ConvertFrom-Utf8Base64 {
-    param([Parameter(Mandatory)][string]$Value)
-    return [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Value))
-}
 
 function Invoke-ChatRequest {
     param(
@@ -60,7 +55,6 @@ function Invoke-ChatRequest {
     return [pscustomobject]@{
         Seconds = [math]::Round($watch.Elapsed.TotalSeconds, 4)
         Content = [string]$response.choices[0].message.content
-        PromptTokens = [int]$response.usage.prompt_tokens
         CompletionTokens = [int]$response.usage.completion_tokens
     }
 }
@@ -74,30 +68,30 @@ function Get-Median {
     return ($sorted[$middle - 1] + $sorted[$middle]) / 2
 }
 
-$spatialPrompt = ConvertFrom-Utf8Base64 '7J2066+47KeA7J2YIOyZvOyqvSDsnIQsIOyYpOuluOyqvSDsnIQsIOyZvOyqvSDslYTrnpgsIOyYpOuluOyqvSDslYTrnpjsl5Ag7J6I64qUIO2BsCDrj4TtmJXsnZgg7IOJ6rO8IOuqqOyWkeydhCDtlZzqta3slrTroZwg7ISk66qF7ZWY6rOgLCDqsoDsnYAg7KCQ7J20IOyWtOuKkCDrj4TtmJUg7JWI7JeQIOyeiOuKlOyngOuPhCDrp5DtlZjshLjsmpQu'
-$ocrPrompt = ConvertFrom-Utf8Base64 '7J2066+47KeA7JeQ7IScIOuLpOyEryDtlYTrk5zrpbwg6re464yA66GcIOydveqzoCBKU09OIOqwneyytOuhnCDstpzroKXtlZjshLjsmpQuIOyYqOuPhOuKlCA2M8KwQyDtmJXsi53snLzroZwg67O07KG07ZWY7IS47JqULg=='
-$naturalPrompt = ConvertFrom-Utf8Base64 '7J6l7IaMLCDrk7HsnqUg64yA7IOBLCDtlonrj5nsnYQg7Y+s7ZWo7ZWY7JesIOydtCDsgqzsp4TsnYQg7J6Q7Jew7Iqk65+s7Jq0IO2VnOq1reyWtCDtlZwg66y47J6l7Jy866GcIOyEpOuqhe2VmOyEuOyalC4='
+$spatialPrompt = '이미지의 왼쪽 위, 오른쪽 위, 왼쪽 아래, 오른쪽 아래에 있는 큰 도형의 색과 모양을 한국어로 설명하고, 검은 점이 어느 도형 안에 있는지도 말하세요.'
+$ocrPrompt = '이미지에서 다섯 필드를 그대로 읽고 JSON 객체로 출력하세요. 온도는 63°C 형식으로 보존하세요.'
+$naturalPrompt = '장소, 등장 대상, 행동을 포함하여 이 사진을 자연스러운 한국어 한 문장으로 설명하세요.'
 
 $spatialExpected = @(
-    (ConvertFrom-Utf8Base64 '67mo6rCE7IOJIOybkA=='),
-    (ConvertFrom-Utf8Base64 '7YyM656A7IOJIOyCrOqwge2YlQ=='),
-    (ConvertFrom-Utf8Base64 '64W57IOJIOyCvOqwge2YlQ=='),
-    (ConvertFrom-Utf8Base64 '64W4656A7IOJIOuzhA=='),
-    (ConvertFrom-Utf8Base64 '7YyM656A7IOJIOyCrOqwge2YlSDslYg=')
+    '빨간색 원',
+    '파란색 사각형',
+    '녹색 삼각형',
+    '노란색 별',
+    '파란색 사각형 안'
 )
 
 $ocrKeys = [ordered]@{
-    Name = ConvertFrom-Utf8Base64 '7J6l67mE66qF'
-    Date = ConvertFrom-Utf8Base64 '7KCQ6rKA7J28'
-    Temperature = ConvertFrom-Utf8Base64 '7Jio64+E'
-    Status = ConvertFrom-Utf8Base64 '7IOB7YOc'
-    AssetId = ConvertFrom-Utf8Base64 '6rSA66as67KI7Zi4'
+    Name = '장비명'
+    Date = '점검일'
+    Temperature = '온도'
+    Status = '상태'
+    AssetId = '관리번호'
 }
 $ocrExpected = [ordered]@{
     Name = 'RTX 2080 SUPER'
     Date = '2026-07-14'
-    Temperature = ConvertFrom-Utf8Base64 'NjPCsEM='
-    Status = ConvertFrom-Utf8Base64 '7KCV7IOB'
+    Temperature = '63°C'
+    Status = '정상'
     AssetId = 'MV-2080S-0714'
 }
 
@@ -149,11 +143,9 @@ for ($i = 0; $i -lt 3; $i++) {
     $passed = $true
     try {
         $parsed = $run.Content | ConvertFrom-Json
-        if ([string]$parsed.($ocrKeys.Name) -ne $ocrExpected.Name) { $passed = $false }
-        if ([string]$parsed.($ocrKeys.Date) -ne $ocrExpected.Date) { $passed = $false }
-        if ([string]$parsed.($ocrKeys.Temperature) -ne $ocrExpected.Temperature) { $passed = $false }
-        if ([string]$parsed.($ocrKeys.Status) -ne $ocrExpected.Status) { $passed = $false }
-        if ([string]$parsed.($ocrKeys.AssetId) -ne $ocrExpected.AssetId) { $passed = $false }
+        foreach ($k in $ocrKeys.Keys) {
+            if ([string]$parsed.($ocrKeys[$k]) -ne $ocrExpected[$k]) { $passed = $false }
+        }
     } catch {
         $passed = $false
     }
@@ -169,9 +161,9 @@ $results.Add([pscustomobject]@{
 
 # A natural photograph from the official Qwen demo assets.
 $natural = Invoke-ChatRequest -Prompt $naturalPrompt -ImagePath (Join-Path $imageDir 'qwen_demo.jpeg') -MaxTokens 96
-$naturalPassed = $natural.Content.Contains((ConvertFrom-Utf8Base64 '7ZW067OA')) -and
-    $natural.Content.Contains((ConvertFrom-Utf8Base64 '7Jes7ISx')) -and
-    ($natural.Content.Contains((ConvertFrom-Utf8Base64 '6rCV7JWE7KeA')) -or $natural.Content.Contains((ConvertFrom-Utf8Base64 '6rCc')))
+$naturalPassed = $natural.Content.Contains('해변') -and
+    $natural.Content.Contains('여성') -and
+    ($natural.Content.Contains('강아지') -or $natural.Content.Contains('개'))
 $results.Add([pscustomobject]@{
     Test = 'natural_image_korean'
     Passed = $naturalPassed

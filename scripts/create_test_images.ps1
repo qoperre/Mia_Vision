@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 
 Add-Type -AssemblyName System.Drawing
 
@@ -15,12 +15,6 @@ function New-Canvas {
     $graphics.TextRenderingHint = [System.Drawing.Text.TextRenderingHint]::AntiAliasGridFit
     $graphics.Clear([System.Drawing.Color]::White)
     return @($bitmap, $graphics)
-}
-
-function ConvertFrom-Utf8Base64 {
-    param([Parameter(Mandatory)][string]$Value)
-
-    return [System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($Value))
 }
 
 # Spatial-reasoning test: four large shapes in a fixed 2x2 arrangement.
@@ -66,14 +60,14 @@ $bodyFont = [System.Drawing.Font]::new('Malgun Gothic', 38, [System.Drawing.Font
 $dark = [System.Drawing.SolidBrush]::new([System.Drawing.Color]::FromArgb(25, 25, 25))
 $linePen = [System.Drawing.Pen]::new([System.Drawing.Color]::FromArgb(50, 90, 150), 4)
 
-$graphics.DrawString((ConvertFrom-Utf8Base64 '66+47JWE67mE7KCEIOyepeu5hCDsoJDqsoDtkZw='), $titleFont, $dark, 70, 55)
+$graphics.DrawString('미아비전 장비 점검표', $titleFont, $dark, 70, 55)
 $graphics.DrawLine($linePen, 70, 135, 950, 135)
 $lines = @(
-    (ConvertFrom-Utf8Base64 '7J6l67mE66qFOiBSVFggMjA4MCBTVVBFUg=='),
-    (ConvertFrom-Utf8Base64 '7KCQ6rKA7J28OiAyMDI2LTA3LTE0'),
-    (ConvertFrom-Utf8Base64 '7Jio64+EOiA2M8KwQw=='),
-    (ConvertFrom-Utf8Base64 '7IOB7YOcOiDsoJXsg4E='),
-    (ConvertFrom-Utf8Base64 '6rSA66as67KI7Zi4OiBNVi0yMDgwUy0wNzE0')
+    '장비명: RTX 2080 SUPER',
+    '점검일: 2026-07-14',
+    '온도: 63°C',
+    '상태: 정상',
+    '관리번호: MV-2080S-0714'
 )
 $y = 175
 foreach ($line in $lines) {

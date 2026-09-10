@@ -89,6 +89,7 @@
     const FLOOR_Y = 604;
     const FIXED_DT = 1 / 120;
     const MAX_FRAME_DT = 0.1;
+    const TARGET_SCORE = 20;
 
     // Deliberately readable at screenshot/inference cadence (~2 decisions/second).
     const PHYSICS = Object.freeze({
@@ -117,8 +118,6 @@
     let previousGapCenter = 320;
     let accumulator = 0;
     let lastFrameTime = performance.now();
-    let manualPause = false;
-    let animationFrame = 0;
 
     function normalizeSeed(value) {
       if (typeof value === "number" && Number.isFinite(value)) return value >>> 0;
@@ -191,10 +190,6 @@
       try { localStorage.setItem("visionFlappyBest", String(bestScore)); } catch (_) {}
     }
 
-    function emit(name, detail) {
-      window.dispatchEvent(new CustomEvent(`game2:${name}`, { detail }));
-    }
-
     function reset(seedOrOptions = undefined) {
       let options = {};
       if (typeof seedOrOptions === "object" && seedOrOptions !== null) {
@@ -213,12 +208,10 @@
       targetReached = false;
       targetFlash = 0;
       bird = makeBird();
-      previousGapCenter = 320;
       initPipes();
       accumulator = 0;
       lastFrameTime = performance.now();
       if (options.start) flap();
-      emit("reset", snapshot());
       render();
       return snapshot();
     }
@@ -227,7 +220,6 @@
       if (status !== "ready") return;
       status = "playing";
       flap();
-      emit("start", snapshot());
     }
 
     function flap() {
@@ -246,12 +238,10 @@
       }
     }
 
-    function endGame(reason) {
+    function endGame() {
       if (status !== "playing") return;
       status = "gameover";
-      bestScore = Math.max(bestScore, score);
       saveBestScore();
-      emit("over", { ...snapshot(), reason });
     }
 
     function circleHitsPipe(pipe) {
@@ -283,12 +273,10 @@
           pipe.passed = true;
           score += 1;
           if (score > bestScore) bestScore = score;
-          if (score >= 20 && !targetReached) {
+          if (score >= TARGET_SCORE && !targetReached) {
             targetReached = true;
             targetFlash = 2.2;
-            emit("target", snapshot());
           }
-          emit("score", snapshot());
         }
       }
 
@@ -300,17 +288,17 @@
 
       if (bird.y - PHYSICS.birdRadius <= 0) {
         bird.y = PHYSICS.birdRadius;
-        endGame("ceiling");
+        endGame();
         return;
       }
       if (bird.y + PHYSICS.birdRadius >= FLOOR_Y) {
         bird.y = FLOOR_Y - PHYSICS.birdRadius;
-        endGame("ground");
+        endGame();
         return;
       }
       for (const pipe of pipes) {
         if (circleHitsPipe(pipe)) {
-          endGame("pipe");
+          endGame();
           return;
         }
       }
@@ -333,10 +321,9 @@
         seed: currentSeed,
         score,
         bestScore,
-        target: 20,
+        target: TARGET_SCORE,
         targetReached,
         elapsed: round(elapsed),
-        paused: manualPause,
         fixedTimestep: FIXED_DT,
         world: { width: W, height: H, floorY: FLOOR_Y },
         bird: { x: round(bird.x), y: round(bird.y), vy: round(bird.vy), radius: PHYSICS.birdRadius },
@@ -528,7 +515,7 @@
       ctx.fillText("TARGET", W - 170, 40);
       ctx.fillStyle = targetReached ? "#57ff8d" : "#ffffff";
       ctx.font = "900 29px Segoe UI, sans-serif";
-      ctx.fillText(`${score}/20`, W - 170, 69);
+      ctx.fillText(`${score}/${TARGET_SCORE}`, W - 170, 69);
 
       ctx.restore();
     }
@@ -548,7 +535,7 @@
         ctx.textBaseline = "middle";
         ctx.fillStyle = "#8bffad";
         ctx.font = "900 28px Segoe UI, sans-serif";
-        ctx.fillText("TARGET 20 CLEARED!", W / 2, 148);
+        ctx.fillText(`TARGET ${TARGET_SCORE} CLEARED!`, W / 2, 148);
         ctx.restore();
         return;
       }
@@ -574,7 +561,7 @@
         ctx.fillText("CLICK / TOUCH / SPACE", W / 2, H / 2 - 18);
         ctx.fillStyle = "#d9e5ff";
         ctx.font = "600 21px Segoe UI, sans-serif";
-        ctx.fillText("Fly through 20 gates", W / 2, H / 2 + 34);
+        ctx.fillText(`Fly through ${TARGET_SCORE} gates`, W / 2, H / 2 + 34);
         ctx.fillStyle = "#91a5d0";
         ctx.font = "500 16px Segoe UI, sans-serif";
         ctx.fillText(`Seed ${currentSeed}  ·  Best ${bestScore}`, W / 2, H / 2 + 88);
@@ -585,9 +572,9 @@
         ctx.fillStyle = "#ffffff";
         ctx.font = "900 36px Segoe UI, sans-serif";
         ctx.fillText(`SCORE  ${score}`, W / 2, H / 2 - 22);
-        ctx.fillStyle = score >= 20 ? "#57ff8d" : "#d9e5ff";
+        ctx.fillStyle = score >= TARGET_SCORE ? "#57ff8d" : "#d9e5ff";
         ctx.font = "700 20px Segoe UI, sans-serif";
-        ctx.fillText(score >= 20 ? "TARGET CLEARED" : "TARGET  20", W / 2, H / 2 + 28);
+        ctx.fillText(score >= TARGET_SCORE ? "TARGET CLEARED" : `TARGET  ${TARGET_SCORE}`, W / 2, H / 2 + 28);
         ctx.fillStyle = "#ffe13b";
         ctx.font = "800 21px Segoe UI, sans-serif";
         ctx.fillText("CLICK / TOUCH / SPACE TO RETRY", W / 2, H / 2 + 88);
@@ -608,7 +595,7 @@
     function frame(now) {
       const frameDt = Math.min(MAX_FRAME_DT, Math.max(0, (now - lastFrameTime) / 1000));
       lastFrameTime = now;
-      if (!manualPause && !document.hidden) {
+      if (!document.hidden) {
         accumulator += frameDt;
         while (accumulator >= FIXED_DT) {
           simulate(FIXED_DT);
@@ -616,7 +603,7 @@
         }
       }
       render();
-      animationFrame = requestAnimationFrame(frame);
+      requestAnimationFrame(frame);
     }
 
     canvas.addEventListener("pointerdown", event => {
@@ -638,32 +625,15 @@
 
     // Read-only observations plus deterministic reset/seed controls for test harnesses.
     // Game-playing agents should use rendered frames and normal pointer/keyboard events.
-    const api = {
-      get: snapshot,
-      reset,
-      seed(value) { return reset({ seed: value }); },
-      pause() { manualPause = true; return snapshot(); },
-      resume() {
-        manualPause = false;
-        accumulator = 0;
-        lastFrameTime = performance.now();
-        return snapshot();
-      },
-      destroy() {
-        cancelAnimationFrame(animationFrame);
-        return snapshot();
-      }
-    };
-    Object.defineProperty(api, "state", { enumerable: true, get: snapshot });
     Object.defineProperty(window, "game2State", {
-      value: Object.freeze(api),
+      value: Object.freeze({ get: snapshot, reset }),
       writable: false,
       configurable: false,
       enumerable: true
     });
 
     reset({ seed: currentSeed });
-    animationFrame = requestAnimationFrame(frame);
+    requestAnimationFrame(frame);
   })();
   </script>
 </body>

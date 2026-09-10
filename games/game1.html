@@ -288,7 +288,7 @@
     }
   </style>
 </head>
-<body data-game="game1" data-status="loading" data-expected="1" data-errors="0">
+<body>
   <header class="topbar">
     <div class="title-block">
       <h1>1부터 50까지</h1>
@@ -314,7 +314,7 @@
   </header>
 
   <main class="arena-wrap">
-    <section id="arena" aria-label="숫자 터치 영역" data-status="loading" data-expected="1" data-errors="0">
+    <section id="arena" aria-label="숫자 터치 영역">
       <div id="result" role="status" aria-live="polite" hidden>
         <div class="result-card">
           <h2>완료!</h2>
@@ -387,13 +387,6 @@
         timeValue.textContent = formatSeconds(elapsed);
         errorValue.textContent = String(errors);
         errorValue.classList.toggle("has-errors", errors > 0);
-
-        for (const element of [document.body, arena]) {
-          element.dataset.status = status;
-          element.dataset.expected = String(expected);
-          element.dataset.errors = String(errors);
-          element.dataset.elapsedMs = elapsed.toFixed(3);
-        }
       }
 
       function timerLoop() {

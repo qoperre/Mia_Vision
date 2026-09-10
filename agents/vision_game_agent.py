@@ -6,8 +6,6 @@ import io
 import itertools
 import json
 import math
-import statistics
-import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
@@ -51,7 +49,6 @@ class QwenVisionClient:
         self.url = base_url.rstrip("/") + "/v1/chat/completions"
         self.timeout = timeout
         self.session = requests.Session()
-        self.lock = threading.Lock()
 
     def analyze(
         self,
@@ -83,8 +80,7 @@ class QwenVisionClient:
             "json_schema": schema,
         }
         started = time.perf_counter()
-        with self.lock:
-            response = self.session.post(self.url, json=payload, timeout=self.timeout)
+        response = self.session.post(self.url, json=payload, timeout=self.timeout)
         latency = time.perf_counter() - started
         response.raise_for_status()
         raw = response.json()["choices"][0]["message"]["content"]
@@ -132,15 +128,11 @@ def element_rect(driver: webdriver.Chrome, selector: str) -> dict[str, float]:
     )
 
 
-def save_png(path: Path, data: bytes) -> None:
-    path.write_bytes(data)
-
-
 def upscale_png(png: bytes, factor: int = 2) -> bytes:
     image = Image.open(io.BytesIO(png)).convert("RGB")
     resized = image.resize((image.width * factor, image.height * factor), Image.Resampling.BICUBIC)
     output = io.BytesIO()
-    resized.save(output, format="PNG", optimize=True)
+    resized.save(output, format="PNG")
     return output.getvalue()
 
 
@@ -230,10 +222,8 @@ def play_game1(
     client: QwenVisionClient,
     seed: int,
     headed: bool,
-    save_artifacts: bool = True,
 ) -> dict[str, Any]:
     driver = make_driver(headed=headed, width=1200, height=850)
-    qwen_calls = 0
     try:
         url = (ROOT / "games" / "game1.html").as_uri()
         driver.get(url)
@@ -254,7 +244,6 @@ def play_game1(
         qwen, vision_latency, raw = client.analyze(
             qwen_png, prompt, game1_schema(), max_tokens=100
         )
-        qwen_calls += 1
         height, width = png_to_bgr(initial_png).shape[:2]
         predictions = {
             number: (qwen[str(number)][0] * width / 1000, qwen[str(number)][1] * height / 1000)
@@ -314,7 +303,7 @@ def play_game1(
             "wrong_number_clicks": int(state["wrongNumberClicks"]),
             "wrong_position_clicks": int(state["wrongPositionClicks"]),
             "correct_clicks": int(state["correctClicks"]),
-            "qwen_calls": qwen_calls,
+            "qwen_calls": 1,
             "qwen_latency_seconds": round(vision_latency, 4),
             "qwen_raw": raw,
             "qwen_predictions_px": {str(k): [round(v[0], 2), round(v[1], 2)] for k, v in predictions.items()},
@@ -325,10 +314,9 @@ def play_game1(
             "browser_console_errors": [entry for entry in browser_logs if entry["level"] == "SEVERE"],
             "trace": trace,
         }
-        if save_artifacts:
-            save_png(ARTIFACT_DIR / f"game1_initial_seed_{seed}.png", initial_png)
-            save_png(ARTIFACT_DIR / f"game1_final_seed_{seed}.png", final_png)
-            write_json(RESULT_DIR / f"game1_seed_{seed}.json", result)
+        (ARTIFACT_DIR / f"game1_initial_seed_{seed}.png").write_bytes(initial_png)
+        (ARTIFACT_DIR / f"game1_final_seed_{seed}.png").write_bytes(final_png)
+        write_json(RESULT_DIR / f"game1_seed_{seed}.json", result)
         return result
     finally:
         driver.quit()
@@ -344,7 +332,13 @@ class FlappyObservation:
     height: int
 
 
-def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -> FlappyObservation:
+def true_runs(flags: np.ndarray) -> list[tuple[int, int]]:
+    """연속된 True 구간을 (시작, 끝) 포함 범위 목록으로 돌려준다."""
+    edges = np.flatnonzero(np.diff(np.concatenate(([0], flags.astype(np.int8), [0]))))
+    return [(int(start), int(stop) - 1) for start, stop in zip(edges[::2], edges[1::2])]
+
+
+def detect_flappy(png: bytes) -> FlappyObservation:
     image = png_to_bgr(png)
     height, width = image.shape[:2]
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
@@ -353,20 +347,31 @@ def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -
     # Bird: anchor on its unique orange beak/wing, then collect nearby yellow body
     # pixels. This prevents the yellow NEXT label from impersonating the bird when a
     # pipe crosses the bird's horizontal lane.
-    orange = cv2.inRange(hsv, np.array([3, 120, 140]), np.array([22, 255, 255]))
-    orange[:, : int(width * 0.10)] = 0
-    orange[:, int(width * 0.43) :] = 0
-    orange[: int(height * 0.10), :] = 0
-    orange[int(height * 0.89) :, :] = 0
+    lx0, lx1 = int(width * 0.10), int(width * 0.43)
+    ly0, ly1 = int(height * 0.10), int(height * 0.89)
+
+    def keep_lane(mask: np.ndarray) -> np.ndarray:
+        # 새가 지나는 차선 밖은 버린다. 두 탐지 경로가 같은 ROI를 쓰도록 한 곳에만 둔다.
+        out = np.zeros_like(mask)
+        out[ly0:ly1, lx0:lx1] = mask[ly0:ly1, lx0:lx1]
+        return out
+
+    orange = keep_lane(cv2.inRange(hsv, np.array([3, 120, 140]), np.array([22, 255, 255])))
     orange_y, orange_x = np.nonzero(orange)
     bird_x: float
     bird_y: float
     if orange_x.size >= 8:
         anchor_x = float(orange_x.mean())
         anchor_y = float(orange_y.mean())
-        yy, xx = np.ogrid[:height, :width]
-        local_body = (yellow > 0) & ((xx - anchor_x) ** 2 + (yy - anchor_y) ** 2 <= 45**2)
+        radius = 45
+        x0, x1 = max(0, int(anchor_x - radius)), min(width, int(anchor_x + radius) + 1)
+        y0, y1 = max(0, int(anchor_y - radius)), min(height, int(anchor_y + radius) + 1)
+        yy, xx = np.ogrid[y0:y1, x0:x1]
+        local_body = ((yellow[y0:y1, x0:x1] > 0)
+                      & ((xx - anchor_x) ** 2 + (yy - anchor_y) ** 2 <= radius**2))
         body_y, body_x = np.nonzero(local_body)
+        body_x += x0
+        body_y += y0
         if body_x.size >= 25:
             bird_x = float(body_x.mean())
             bird_y = float(body_y.mean())
@@ -377,31 +382,22 @@ def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -
         bird_x = math.nan
         bird_y = math.nan
 
-    # Yellow-component fallback handles extreme antialiasing or color-management
-    # differences, while the orange path above is used in normal play.
-    bird_roi = yellow.copy()
-    bird_roi[:, : int(width * 0.10)] = 0
-    bird_roi[:, int(width * 0.43) :] = 0
-    bird_roi[: int(height * 0.10), :] = 0
-    bird_roi[int(height * 0.89) :, :] = 0
-    # The black outline/wing splits the yellow body into two islands after browser
-    # scaling. Closing them first gives one stable centroid.
-    bird_roi = cv2.morphologyEx(
-        bird_roi, cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
-    )
-    contours, _ = cv2.findContours(bird_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    bird_candidates: list[tuple[float, float, float]] = []
-    for contour in contours:
-        area = cv2.contourArea(contour)
-        if 70 <= area <= 4500:
-            moments = cv2.moments(contour)
-            if moments["m00"]:
-                x = moments["m10"] / moments["m00"]
-                y = moments["m01"] / moments["m00"]
-                bird_candidates.append((area, x, y))
-    if math.isnan(bird_x) and not bird_candidates:
-        raise RuntimeError("Bird was not detected in rendered frame")
     if math.isnan(bird_x):
+        # Yellow fallback handles unusual antialiasing or color management.
+        bird_roi = cv2.morphologyEx(
+            keep_lane(yellow), cv2.MORPH_CLOSE, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+        )
+        contours, _ = cv2.findContours(bird_roi, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        bird_candidates: list[tuple[float, float, float]] = []
+        for contour in contours:
+            area = cv2.contourArea(contour)
+            if 70 <= area <= 4500:
+                moments = cv2.moments(contour)
+                if moments["m00"]:
+                    bird_candidates.append((area, moments["m10"] / moments["m00"],
+                                            moments["m01"] / moments["m00"]))
+        if not bird_candidates:
+            raise RuntimeError("Bird was not detected in rendered frame")
         _, bird_x, bird_y = min(
             bird_candidates,
             key=lambda item: abs(item[1] / width - 0.237) - min(item[0], 1200) / 5000,
@@ -415,17 +411,11 @@ def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -
     column_counts = np.count_nonzero(cyan, axis=0)
     active_columns = column_counts >= max(8, int(height * 0.025))
 
-    groups: list[tuple[int, int]] = []
-    start: int | None = None
-    for index, active in enumerate(active_columns):
-        if active and start is None:
-            start = index
-        elif not active and start is not None:
-            if index - start >= int(width * 0.045):
-                groups.append((start, index - 1))
-            start = None
-    if start is not None and width - start >= int(width * 0.045):
-        groups.append((start, width - 1))
+    groups = [
+        (left, right)
+        for left, right in true_runs(active_columns)
+        if right - left + 1 >= int(width * 0.045)
+    ]
 
     gap_x: float | None = None
     gap_y: float | None = None
@@ -443,19 +433,12 @@ def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -
         if true_rows.size < 2:
             continue
         first, last = int(true_rows[0]), int(true_rows[-1])
-        runs: list[tuple[int, int]] = []
-        run_start: int | None = None
-        for row in range(first, last + 1):
-            if not present[row] and run_start is None:
-                run_start = row
-            elif present[row] and run_start is not None:
-                runs.append((run_start, row - 1))
-                run_start = None
-        if run_start is not None:
-            runs.append((run_start, last))
-        if not runs:
+        gaps = true_runs(~present[first : last + 1])
+        if not gaps:
             continue
-        gap_top, gap_bottom = max(runs, key=lambda run: run[1] - run[0])
+        gap_top, gap_bottom = max(gaps, key=lambda run: run[1] - run[0])
+        gap_top += first
+        gap_bottom += first
         if gap_bottom - gap_top < height * 0.16:
             continue
         center_x = (left + right) / 2
@@ -465,8 +448,6 @@ def detect_flappy(png: bytes, previous_gap: tuple[float, float] | None = None) -
     if pipe_candidates:
         _, gap_x, gap_y = min(pipe_candidates, key=lambda candidate: candidate[0])
 
-    if gap_y is None and previous_gap is not None:
-        gap_x, gap_y = previous_gap
     return FlappyObservation(bird_x, bird_y, gap_x, gap_y, width, height)
 
 
@@ -499,7 +480,6 @@ def play_game2(
     headed: bool,
     target: int = 21,
     max_seconds: float = 75,
-    save_artifacts: bool = True,
 ) -> dict[str, Any]:
     driver = make_driver(headed=headed, width=1000, height=700)
     executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="qwen-flappy")
@@ -523,8 +503,6 @@ def play_game2(
         filtered_vy = 0.0
         last_flap = started
         previous_gap: tuple[float, float] | None = None
-        previous_observed_gap: tuple[float, float] | None = None
-        last_submitted_gap: tuple[float, float] | None = None
         model_gap_y: float | None = None
         model_gap_received_at = 0.0
         model_gap_generation = 0
@@ -532,9 +510,9 @@ def play_game2(
         touches = 1
         detection_failures = 0
         trace: list[dict[str, Any]] = []
-        reached = False
         gameover = False
         first_play_png: bytes | None = None
+        last_elapsed = -1.0
 
         while time.perf_counter() - started < max_seconds:
             loop_started = time.perf_counter()
@@ -548,15 +526,19 @@ def play_game2(
             # on the game-over frame would legitimately restart the game and hide the
             # collision from the benchmark. State values never feed the flight policy.
             referee_state = driver.execute_script("return window.game2State.get();")
+            elapsed_now = float(referee_state["elapsed"])
+            if elapsed_now < last_elapsed:
+                gameover = True
+                break
+            last_elapsed = elapsed_now
             if referee_state["status"] == "gameover":
                 gameover = True
                 break
             if int(referee_state["score"]) >= target:
-                reached = True
                 break
 
             try:
-                observation = detect_flappy(png, previous_gap)
+                observation = detect_flappy(png)
                 detection_failures = 0
             except RuntimeError:
                 detection_failures += 1
@@ -570,17 +552,15 @@ def play_game2(
                 new_gap = (observation.gap_x, observation.gap_y)
                 # A pipe instance moves left. A large rightward jump marks the next pipe.
                 is_new_pipe = (
-                    last_submitted_gap is None
+                    qwen_calls == 0
                     or (
-                        previous_observed_gap is not None
-                        and new_gap[0] > previous_observed_gap[0] + observation.width * 0.18
+                        previous_gap is not None
+                        and new_gap[0] > previous_gap[0] + observation.width * 0.18
                     )
                 )
-                previous_observed_gap = new_gap
                 previous_gap = new_gap
                 if is_new_pipe and pending is None:
                     pending = executor.submit(analyze_flappy_frame, client, png)
-                    last_submitted_gap = new_gap
                     qwen_calls += 1
                     model_gap_generation += 1
 
@@ -657,7 +637,7 @@ def play_game2(
                     }
                 )
 
-            # Keep screenshot/CV cadence around 20 Hz without blocking Qwen inference.
+            # Cap at ~22 Hz; measured cadence is ~7 Hz (screenshot + CV dominate), so this rarely sleeps.
             remaining = 0.045 - (time.perf_counter() - loop_started)
             if remaining > 0:
                 time.sleep(remaining)
@@ -688,15 +668,12 @@ def play_game2(
             "browser_console_errors": [entry for entry in browser_logs if entry["level"] == "SEVERE"],
             "trace": trace,
         }
-        if save_artifacts:
-            if first_play_png is not None:
-                save_png(ARTIFACT_DIR / f"game2_first_seed_{seed}.png", first_play_png)
-            save_png(ARTIFACT_DIR / f"game2_final_seed_{seed}.png", final_png)
-            write_json(RESULT_DIR / f"game2_seed_{seed}.json", result)
+        if first_play_png is not None:
+            (ARTIFACT_DIR / f"game2_first_seed_{seed}.png").write_bytes(first_play_png)
+        (ARTIFACT_DIR / f"game2_final_seed_{seed}.png").write_bytes(final_png)
+        write_json(RESULT_DIR / f"game2_seed_{seed}.json", result)
         return result
     finally:
-        if pending is not None:
-            pending.cancel()
         executor.shutdown(wait=False, cancel_futures=True)
         driver.quit()
 
@@ -730,6 +707,7 @@ def main() -> int:
     health.raise_for_status()
     if health.json().get("status") != "ok":
         raise RuntimeError(f"Qwen server is not ready: {health.text}")
+    (RESULT_DIR / "latest.json").unlink(missing_ok=True)
     client = QwenVisionClient(args.api)
 
     results: list[dict[str, Any]] = []
